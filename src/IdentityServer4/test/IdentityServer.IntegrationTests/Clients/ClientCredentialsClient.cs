@@ -2,6 +2,7 @@
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -147,8 +148,10 @@ namespace IdentityServer.IntegrationTests.Clients
             var scopes = payload["scope"] as JArray;
             scopes.First().ToString().Should().Be("api1");
 
-            var cnf = payload["cnf"] as JObject;
-            cnf["x5t#S256"].ToString().Should().Be("foo");
+            var cnf = payload["cnf"] as JArray;
+            var token = cnf[0][0];
+            var v = token.Value<string>();
+            v.Should().Be("foo");
         }
 
         [Fact]

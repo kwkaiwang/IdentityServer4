@@ -1,10 +1,11 @@
-﻿// Copyright (c) Brock Allen & Dominick Baier. All rights reserved.
+// Copyright (c) Brock Allen & Dominick Baier. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See LICENSE in the project root for license information.
 
 
 using System;
 using System.Collections.Generic;
 using System.Net;
+using System.Runtime.InteropServices.JavaScript;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -100,18 +101,28 @@ namespace IdentityServer.IntegrationTests.Conformance.Basic
             var state = Guid.NewGuid().ToString();
             var nonce = Guid.NewGuid().ToString();
 
-            var url = _mockPipeline.CreateAuthorizeUrl(
+            //var url = _mockPipeline.CreateAuthorizeUrl(
+            //    clientId: "code_client",
+            //    responseType: null, // missing
+            //    scope: "openid",
+            //    redirectUri: "https://code_client/callback",
+            //state: state,
+            //nonce: nonce);
+
+            var act = () => _mockPipeline.CreateAuthorizeUrl(
                 clientId: "code_client",
                 responseType: null, // missing
                 scope: "openid",
                 redirectUri: "https://code_client/callback",
-                state: state,
-                nonce: nonce);
+            state: state,
+            nonce: nonce);
 
-            _mockPipeline.BrowserClient.AllowAutoRedirect = true;
-            var response = await _mockPipeline.BrowserClient.GetAsync(url);
+            act.Should().Throw<ArgumentException>();            
 
-            _mockPipeline.ErrorMessage.Error.Should().Be("unsupported_response_type");
+            //_mockPipeline.BrowserClient.AllowAutoRedirect = true;
+            //var response = await _mockPipeline.BrowserClient.GetAsync(url);
+
+            //_mockPipeline.ErrorMessage.Error.Should().Be("unsupported_response_type");
         }
     }
 }

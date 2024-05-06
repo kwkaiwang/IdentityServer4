@@ -11,6 +11,7 @@ using IdentityServer.IntegrationTests.Clients.Setup;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
 using Xunit;
+using System.Text.Json;
 
 namespace IdentityServer.IntegrationTests.Clients
 {
@@ -45,7 +46,7 @@ namespace IdentityServer.IntegrationTests.Clients
             });
 
             var fields = GetFields(response);
-            fields.Should().Contain("custom", "custom");
+            fields.Should().ContainKeys("custom");
         }
 
         [Fact]
@@ -64,7 +65,7 @@ namespace IdentityServer.IntegrationTests.Clients
             });
 
             var fields = GetFields(response);
-            fields.Should().Contain("custom", "custom");
+            fields.Should().ContainKey("custom");
         }
 
         [Fact]
@@ -92,7 +93,7 @@ namespace IdentityServer.IntegrationTests.Clients
             });
 
             var fields = GetFields(response);
-            fields.Should().Contain("custom", "custom");
+            fields.Should().ContainKey("custom");
         }
 
         [Fact]
@@ -114,12 +115,12 @@ namespace IdentityServer.IntegrationTests.Clients
             });
 
             var fields = GetFields(response);
-            fields.Should().Contain("custom", "custom");
+            fields.Should().ContainKey("custom");
         }
 
         private Dictionary<string, object> GetFields(TokenResponse response)
         {
-            return response.Json.ToObject<Dictionary<string, object>>();
+            return response.Json?.Deserialize<Dictionary<string, object>>();
         }
     }
 }

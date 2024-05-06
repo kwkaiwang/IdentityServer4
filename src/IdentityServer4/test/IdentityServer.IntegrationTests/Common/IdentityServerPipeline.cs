@@ -8,16 +8,21 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Security.Claims;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+
 using FluentAssertions;
+
 using IdentityModel.Client;
+
 using IdentityServer4;
 using IdentityServer4.Configuration;
 using IdentityServer4.Extensions;
 using IdentityServer4.Models;
 using IdentityServer4.Services;
 using IdentityServer4.Test;
+
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -32,6 +37,7 @@ namespace IdentityServer.IntegrationTests.Common
     {
         public const string BaseUrl = "https://server";
         public const string LoginPage = BaseUrl + "/account/login";
+        public const string LogoutPage = BaseUrl + "/account/logout";
         public const string ConsentPage = BaseUrl + "/account/consent";
         public const string ErrorPage = BaseUrl + "/home/error";
 
@@ -39,6 +45,7 @@ namespace IdentityServer.IntegrationTests.Common
         public const string DiscoveryEndpoint = BaseUrl + "/.well-known/openid-configuration";
         public const string DiscoveryKeysEndpoint = BaseUrl + "/.well-known/openid-configuration/jwks";
         public const string AuthorizeEndpoint = BaseUrl + "/connect/authorize";
+        public const string BackchannelAuthenticationEndpoint = BaseUrl + "/connect/ciba";
         public const string TokenEndpoint = BaseUrl + "/connect/token";
         public const string RevocationEndpoint = BaseUrl + "/connect/revocation";
         public const string UserInfoEndpoint = BaseUrl + "/connect/userinfo";
@@ -47,6 +54,7 @@ namespace IdentityServer.IntegrationTests.Common
         public const string EndSessionEndpoint = BaseUrl + "/connect/endsession";
         public const string EndSessionCallbackEndpoint = BaseUrl + "/connect/endsession/callback";
         public const string CheckSessionEndpoint = BaseUrl + "/connect/checksession";
+        public const string ParEndpoint = BaseUrl + "/connect/par";
 
         public const string FederatedSignOutPath = "/signout-oidc";
         public const string FederatedSignOutUrl = BaseUrl + FederatedSignOutPath;
@@ -78,7 +86,7 @@ namespace IdentityServer.IntegrationTests.Common
         {
             var builder = new WebHostBuilder();
             builder.ConfigureServices(ConfigureServices);
-            builder.Configure(app=>
+            builder.Configure(app =>
             {
                 if (basePath != null)
                 {
@@ -100,7 +108,7 @@ namespace IdentityServer.IntegrationTests.Common
 
             Server = new TestServer(builder);
             Handler = Server.CreateHandler();
-            
+
             BrowserClient = new BrowserClient(new BrowserHandler(Handler));
             BackChannelClient = new HttpClient(Handler);
         }
@@ -136,12 +144,12 @@ namespace IdentityServer.IntegrationTests.Common
                     RaiseSuccessEvents = true
                 };
             })
-            .AddInMemoryClients(Clients)
-            .AddInMemoryIdentityResources(IdentityScopes)
-            .AddInMemoryApiResources(ApiResources)
-            .AddInMemoryApiScopes(ApiScopes)
-            .AddTestUsers(Users)
-            .AddDeveloperSigningCredential(persistKey: false);
+                .AddInMemoryClients(Clients)
+                .AddInMemoryIdentityResources(IdentityScopes)
+                .AddInMemoryApiResources(ApiResources)
+                .AddInMemoryApiScopes(ApiScopes)
+                .AddTestUsers(Users)
+                .AddDeveloperSigningCredential(persistKey: false);
 
             services.AddHttpClient(IdentityServerConstants.HttpClients.BackChannelLogoutHttpClient)
                 .AddHttpMessageHandler(() => BackChannelMessageHandler);
@@ -154,6 +162,8 @@ namespace IdentityServer.IntegrationTests.Common
 
         public void ConfigureApp(IApplicationBuilder app)
         {
+            ApplicationServices = app.ApplicationServices;
+
             OnPreConfigure(app);
 
             app.UseIdentityServer();
@@ -180,6 +190,7 @@ namespace IdentityServer.IntegrationTests.Common
         }
 
         public bool LoginWasCalled { get; set; }
+        public string LoginReturnUrl { get; set; }
         public AuthorizationRequest LoginRequest { get; set; }
         public ClaimsPrincipal Subject { get; set; }
         public bool FollowLoginReturnUrl { get; set; }
@@ -194,7 +205,8 @@ namespace IdentityServer.IntegrationTests.Common
         private async Task ReadLoginRequest(HttpContext ctx)
         {
             var interaction = ctx.RequestServices.GetRequiredService<IIdentityServerInteractionService>();
-            LoginRequest = await interaction.GetAuthorizationContextAsync(ctx.Request.Query["returnUrl"].FirstOrDefault());
+            LoginReturnUrl = ctx.Request.Query[Options.UserInteraction.LoginReturnUrlParameter].FirstOrDefault();
+            LoginRequest = await interaction.GetAuthorizationContextAsync(LoginReturnUrl);
         }
 
         private async Task IssueLoginCookie(HttpContext ctx)
@@ -238,13 +250,11 @@ namespace IdentityServer.IntegrationTests.Common
             await ReadConsentMessage(ctx);
             await CreateConsentResponse(ctx);
         }
-
         private async Task ReadConsentMessage(HttpContext ctx)
         {
             var interaction = ctx.RequestServices.GetRequiredService<IIdentityServerInteractionService>();
             ConsentRequest = await interaction.GetAuthorizationContextAsync(ctx.Request.Query["returnUrl"].FirstOrDefault());
         }
-
         private async Task CreateConsentResponse(HttpContext ctx)
         {
             if (ConsentRequest != null && ConsentResponse != null)
@@ -261,8 +271,19 @@ namespace IdentityServer.IntegrationTests.Common
             }
         }
 
+        public bool CustomWasCalled { get; set; }
+        public AuthorizationRequest CustomRequest { get; set; }
+
+        private async Task OnCustom(HttpContext ctx)
+        {
+            CustomWasCalled = true;
+            var interaction = ctx.RequestServices.GetRequiredService<IIdentityServerInteractionService>();
+            CustomRequest = await interaction.GetAuthorizationContextAsync(ctx.Request.Query[Options.UserInteraction.ConsentReturnUrlParameter].FirstOrDefault());
+        }
+
         public bool ErrorWasCalled { get; set; }
         public ErrorMessage ErrorMessage { get; set; }
+        public IServiceProvider ApplicationServices { get; private set; }
 
         private async Task OnError(HttpContext ctx)
         {
@@ -291,6 +312,15 @@ namespace IdentityServer.IntegrationTests.Common
         public async Task LoginAsync(string subject)
         {
             await LoginAsync(new IdentityServerUser(subject).CreatePrincipal());
+        }
+        public async Task LogoutAsync()
+        {
+            var old = BrowserClient.AllowAutoRedirect;
+            BrowserClient.AllowAutoRedirect = false;
+
+            await BrowserClient.GetAsync(LogoutPage);
+
+            BrowserClient.AllowAutoRedirect = old;
         }
 
         public void RemoveLoginCookie()
@@ -332,16 +362,59 @@ namespace IdentityServer.IntegrationTests.Common
                 responseMode: responseMode,
                 codeChallenge: codeChallenge,
                 codeChallengeMethod: codeChallengeMethod,
-                extra: extra);
+                extra: Parameters.FromObject(extra));
             return url;
         }
-
-        public AuthorizeResponse ParseAuthorizationResponseUrl(string url)
+        public async Task<(JsonDocument, HttpStatusCode)> PushAuthorizationRequestAsync(
+            Dictionary<string, string> parameters)
         {
-            return new AuthorizeResponse(url);
+            var httpResponse = await BackChannelClient.PostAsync(ParEndpoint,
+                new FormUrlEncodedContent(parameters));
+            var statusCode = httpResponse.StatusCode;
+            var rawContent = await httpResponse.Content.ReadAsStringAsync();
+            var parsed = rawContent.IsPresent() ? JsonDocument.Parse(rawContent) : null;
+            return (parsed, statusCode);
         }
 
-        public async Task<AuthorizeResponse> RequestAuthorizationEndpointAsync(
+        public async Task<(JsonDocument, HttpStatusCode)> PushAuthorizationRequestAsync(
+            string clientId = "client1",
+            string clientSecret = "secret",
+            string responseType = "id_token",
+            string scope = "openid profile",
+            string redirectUri = "https://client1/callback",
+            string nonce = "123_nonce",
+            string state = "123_state",
+            Dictionary<string, string> extra = null
+        )
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                { "client_id", clientId },
+                { "client_secret", clientSecret },
+                { "response_type", responseType },
+                { "scope", scope },
+                { "redirect_uri", redirectUri },
+                { "nonce", nonce },
+                { "state", state }
+            };
+
+            if (extra != null)
+            {
+                foreach (var (key, value) in extra)
+                {
+                    parameters[key] = value;
+                }
+            }
+
+            return await PushAuthorizationRequestAsync(parameters);
+        }
+
+        public IdentityModel.Client.AuthorizeResponse ParseAuthorizationResponseUrl(string url)
+        {
+            return new IdentityModel.Client.AuthorizeResponse(url);
+        }
+
+        public async Task<IdentityModel.Client.AuthorizeResponse> RequestAuthorizationEndpointAsync(
             string clientId,
             string responseType,
             string scope = null,
@@ -374,7 +447,13 @@ namespace IdentityServer.IntegrationTests.Common
                 return null;
             }
 
-            return new AuthorizeResponse(redirect);
+            return new IdentityModel.Client.AuthorizeResponse(redirect);
+        }
+
+        public T Resolve<T>()
+        {
+            // create throw-away scope
+            return ApplicationServices.CreateScope().ServiceProvider.GetRequiredService<T>();
         }
     }
 
@@ -396,7 +475,7 @@ namespace IdentityServer.IntegrationTests.Common
         }
     }
 
-    public class MockExternalAuthenticationHandler : 
+    public class MockExternalAuthenticationHandler :
         IAuthenticationHandler,
         IAuthenticationSignInHandler,
         IAuthenticationRequestHandler
@@ -404,7 +483,7 @@ namespace IdentityServer.IntegrationTests.Common
         private readonly IHttpContextAccessor _httpContextAccessor;
         private HttpContext HttpContext => _httpContextAccessor.HttpContext;
 
-        public Func<HttpContext, Task<bool>> OnFederatedSignout = 
+        public Func<HttpContext, Task<bool>> OnFederatedSignout =
             async context =>
             {
                 await context.SignOutAsync();
@@ -456,4 +535,5 @@ namespace IdentityServer.IntegrationTests.Common
             return Task.CompletedTask;
         }
     }
+
 }

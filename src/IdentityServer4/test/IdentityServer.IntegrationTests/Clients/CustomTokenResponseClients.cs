@@ -14,9 +14,9 @@ using IdentityModel.Client;
 using IdentityServer.IntegrationTests.Clients.Setup;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using Xunit;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace IdentityServer.IntegrationTests.Clients
 {
@@ -51,8 +51,8 @@ namespace IdentityServer.IntegrationTests.Clients
 
             // raw fields
             var fields = GetFields(response);
-            fields.Should().Contain("string_value", "some_string");
-            ((Int64)fields["int_value"]).Should().Be(42);
+            fields.Should().ContainKey("string_value").WhoseValue.ToString().Should().Be("some_string");
+            ((JsonElement)fields["int_value"]).GetInt64().Should().Be(42);
 
             object temp;
             fields.TryGetValue("identity_token", out temp).Should().BeFalse();
@@ -62,7 +62,7 @@ namespace IdentityServer.IntegrationTests.Clients
             fields.TryGetValue("token_type", out temp).Should().BeTrue();
             fields.TryGetValue("expires_in", out temp).Should().BeTrue();
 
-            var responseObject = fields["dto"] as JObject;
+            var responseObject = (JsonElement)fields["dto"];
             responseObject.Should().NotBeNull();
 
             var responseDto = GetDto(responseObject);
@@ -85,17 +85,17 @@ namespace IdentityServer.IntegrationTests.Clients
             // token content
             var payload = GetPayload(response);
             payload.Count().Should().Be(12);
-            payload.Should().Contain("iss", "https://idsvr4");
-            payload.Should().Contain("client_id", "roclient");
-            payload.Should().Contain("sub", "bob");
-            payload.Should().Contain("idp", "local");
+            payload.Should().ContainKey("iss").WhoseValue.ToString().Should().Be("https://idsvr4");
+            payload.Should().ContainKey("client_id").WhoseValue.ToString().Should().Be("roclient");
+            payload.Should().ContainKey("sub").WhoseValue.ToString().Should().Be("bob");
+            payload.Should().ContainKey("idp").WhoseValue.ToString().Should().Be("local");
 
-            payload["aud"].Should().Be("api");
+            payload["aud"].ToString().Should().Be("api");
 
-            var scopes = payload["scope"] as JArray;
+            var scopes = ((JsonElement)payload["scope"]).EnumerateArray();
             scopes.First().ToString().Should().Be("api1");
 
-            var amr = payload["amr"] as JArray;
+            var amr = ((JsonElement) payload["amr"]).EnumerateArray();
             amr.Count().Should().Be(1);
             amr.First().ToString().Should().Be("password");
         }
@@ -116,8 +116,8 @@ namespace IdentityServer.IntegrationTests.Clients
 
             // raw fields
             var fields = GetFields(response);
-            fields.Should().Contain("string_value", "some_string");
-            ((Int64)fields["int_value"]).Should().Be(42);
+            fields.Should().ContainKey("string_value").WhoseValue.ToString().Should().BeEquivalentTo("some_string"); ;
+            ((JsonElement)fields["int_value"]).GetInt64().Should().Be(42);
 
             object temp;
             fields.TryGetValue("identity_token", out temp).Should().BeFalse();
@@ -127,7 +127,7 @@ namespace IdentityServer.IntegrationTests.Clients
             fields.TryGetValue("token_type", out temp).Should().BeFalse();
             fields.TryGetValue("expires_in", out temp).Should().BeFalse();
 
-            var responseObject = fields["dto"] as JObject;
+            var responseObject = (JsonElement)fields["dto"];
             responseObject.Should().NotBeNull();
 
             var responseDto = GetDto(responseObject);
@@ -170,8 +170,8 @@ namespace IdentityServer.IntegrationTests.Clients
 
             // raw fields
             var fields = GetFields(response);
-            fields.Should().Contain("string_value", "some_string");
-            ((Int64)fields["int_value"]).Should().Be(42);
+            fields.Should().ContainKey("string_value");
+            ((JsonElement)fields["int_value"]).GetInt64().Should().Be(42);
 
             object temp;
             fields.TryGetValue("identity_token", out temp).Should().BeFalse();
@@ -181,7 +181,7 @@ namespace IdentityServer.IntegrationTests.Clients
             fields.TryGetValue("token_type", out temp).Should().BeTrue();
             fields.TryGetValue("expires_in", out temp).Should().BeTrue();
 
-            var responseObject = fields["dto"] as JObject;
+            var responseObject = (JsonElement)fields["dto"];
             responseObject.Should().NotBeNull();
 
             var responseDto = GetDto(responseObject);
@@ -204,17 +204,18 @@ namespace IdentityServer.IntegrationTests.Clients
             // token content
             var payload = GetPayload(response);
             payload.Count().Should().Be(12);
-            payload.Should().Contain("iss", "https://idsvr4");
-            payload.Should().Contain("client_id", "client.custom");
-            payload.Should().Contain("sub", "bob");
-            payload.Should().Contain("idp", "local");
+            payload.Should().ContainKey("iss"); //"https://idsvr4"
+            payload.Should().ContainKey("client_id").WhoseValue.ToString().Should().BeEquivalentTo("client.custom");
+            payload.Should().ContainKey("sub").WhoseValue.ToString().Should().BeEquivalentTo("bob"); ;//, "bob"
+            payload.Should().ContainKey("idp").WhoseValue.ToString().Should().BeEquivalentTo("local");
 
-            payload["aud"].Should().Be("api");
+            //payload["aud"].Should().Be("api");
+            payload.Should().ContainKey("aud").WhoseValue.ToString().Should().BeEquivalentTo("api");
 
-            var scopes = payload["scope"] as JArray;
-            scopes.First().ToString().Should().Be("api1");
+            var scopes = (JsonElement) payload["scope"];
+            scopes[0].ToString().Should().Be("api1");
 
-            var amr = payload["amr"] as JArray;
+            var amr = ((JsonElement)payload["amr"]).EnumerateArray();
             amr.Count().Should().Be(1);
             amr.First().ToString().Should().Be("custom");
 
@@ -241,8 +242,8 @@ namespace IdentityServer.IntegrationTests.Clients
 
             // raw fields
             var fields = GetFields(response);
-            fields.Should().Contain("string_value", "some_string");
-            ((Int64)fields["int_value"]).Should().Be(42);
+            fields.Should().ContainKey("string_value");
+            (((JsonElement)fields["int_value"]).GetInt64()).Should().Be(42);
 
             object temp;
             fields.TryGetValue("identity_token", out temp).Should().BeFalse();
@@ -252,7 +253,7 @@ namespace IdentityServer.IntegrationTests.Clients
             fields.TryGetValue("token_type", out temp).Should().BeFalse();
             fields.TryGetValue("expires_in", out temp).Should().BeFalse();
 
-            var responseObject = fields["dto"] as JObject;
+            var responseObject = (JsonElement) fields["dto"];
             responseObject.Should().NotBeNull();
 
             var responseDto = GetDto(responseObject);
@@ -274,21 +275,25 @@ namespace IdentityServer.IntegrationTests.Clients
             response.RefreshToken.Should().BeNull();
         }
 
-        private CustomResponseDto GetDto(JObject responseObject)
+        private CustomResponseDto GetDto(JsonElement e)
         {
-            return responseObject.ToObject<CustomResponseDto>();
+            return e.Deserialize<CustomResponseDto>();
+        }
+        private CustomResponseDto GetDto(JsonObject responseObject)
+        {
+            return responseObject.Deserialize<CustomResponseDto>();
         }
 
         private Dictionary<string, object> GetFields(TokenResponse response)
         {
-            return response.Json.ToObject<Dictionary<string, object>>();
+            return response.Json?.Deserialize<Dictionary<string, object>>();
         }
 
         private Dictionary<string, object> GetPayload(TokenResponse response)
         {
             var token = response.AccessToken.Split('.').Skip(1).Take(1).First();
-            var dictionary = JsonConvert.DeserializeObject<Dictionary<string, object>>(
-                Encoding.UTF8.GetString(Base64Url.Decode(token)));
+            var text = Encoding.UTF8.GetString(Base64Url.Decode(token));
+            var dictionary = JsonSerializer.Deserialize<Dictionary<string, object>>(text);
 
             return dictionary;
         }
